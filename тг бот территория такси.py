@@ -290,6 +290,29 @@ class Database:
             # Затем удаляем водителя
             cursor.execute('DELETE FROM drivers WHERE driver_id = ?', (driver_id,))
             conn.commit()
+    
+    def get_stats(self) -> Dict:
+        """Получение статистики"""
+        with sqlite3.connect(self.db_name) as conn:
+            cursor = conn.cursor()
+            
+            
+            cursor.execute('SELECT COUNT(*) FROM drivers')
+            total_drivers = cursor.fetchone()[0]
+            
+           
+            cursor.execute('SELECT COUNT(*) FROM drivers WHERE is_active = 1')
+            active_drivers = cursor.fetchone()[0]
+            
+           
+            cursor.execute('SELECT COUNT(*) FROM messages')
+            total_messages = cursor.fetchone()[0]
+            
+            return {
+                'total_drivers': total_drivers,
+                'active_drivers': active_drivers,
+                'total_messages': total_messages
+            }
 
 
 db = Database()
@@ -576,7 +599,7 @@ async def replace_topic_and_create_new(context: ContextTypes.DEFAULT_TYPE, user,
         # Сохраняем приветственное сообщение
         db.save_message(user.id, 'driver', "Новая регистрация")
         
-        # Уведомляем админов о новом водителе
+        # Уведомляем админов
         for admin_id in ADMIN_IDS:
             try:
                 await context.bot.send_message(
@@ -585,7 +608,8 @@ async def replace_topic_and_create_new(context: ContextTypes.DEFAULT_TYPE, user,
                          f"👤 {driver_name}\n"
                          f"📞 {phone}\n"
                          f"🚗 {car_number}\n"
-                         f"Тема создана: {topic_name}",
+                         f"Тема создана: {topic_name}\n"
+                         f"⚠️ Старая тема с этим номером удалена",
                     parse_mode='Markdown'
                 )
             except:
@@ -786,6 +810,7 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показ панели администратора в группе"""
     keyboard = [
         [InlineKeyboardButton("📋 Список активных тем", callback_data="list_topics")],
+        [InlineKeyboardButton("📊 Статистика", callback_data="show_stats")],
         [InlineKeyboardButton("ℹ️ Помощь", callback_data="admin_help")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -822,8 +847,11 @@ async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
             # Сохраняем в историю
             db.save_message(driver_id, 'admin', message.text)
             
+            # *** УДАЛЕНО: сообщение администратору об отправке ***
+            
         except Exception as e:
             logger.error(f"Ошибка при отправке ответа водителю: {e}")
+            # *** УДАЛЕНО: сообщение об ошибке администратору ***
     else:
         
         pass
@@ -961,7 +989,25 @@ async def list_drivers_command(update: Update, context: ContextTypes.DEFAULT_TYP
     
     await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
-# *** УДАЛЕНА функция stats_command ***
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда для просмотра статистики /stats"""
+    user = update.effective_user
+    
+
+    if user.id not in ADMIN_IDS:
+        await update.message.reply_text("❌ У вас нет прав для этой команды")
+        return
+    
+    stats = db.get_stats()
+    
+    text = (
+        "📊 **Статистика бота:**\n\n"
+        f"👥 Всего водителей: **{stats['total_drivers']}**\n"
+        f"✅ Активных сейчас: **{stats['active_drivers']}**\n"
+        f"💬 Всего сообщений: **{stats['total_messages']}**\n"
+    )
+    
+    await update.message.reply_text(text, parse_mode='Markdown')
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда помощи /help"""
@@ -972,6 +1018,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "**🔧 Команды администратора:**\n\n"
             "`/list` - список активных водителей\n"
             "`/history [ID]` - история сообщений\n"
+            "`/stats` - статистика\n"
             "`/close` - закрыть текущую тему\n"
             "`/help` - это сообщение\n\n"
             "**📝 Как работать:**\n"
@@ -1026,7 +1073,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
     
-    # *** УДАЛЕН блок elif data == "show_stats" ***
+    elif data == "show_stats":
+        stats = db.get_stats()
+        text = (
+            "📊 **Статистика:**\n\n"
+            f"👥 Всего водителей: {stats['total_drivers']}\n"
+            f"✅ Активных: {stats['active_drivers']}\n"
+            f"💬 Сообщений: {stats['total_messages']}"
+        )
+        
+        keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_admin")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
     
     elif data == "admin_help":
         text = (
@@ -1040,6 +1098,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "**Команды:**\n"
             "/list - список водителей\n"
             "/history - история сообщений\n"
+            "/stats - статистика\n"
             "/close - закрыть тему"
         )
         
@@ -1110,6 +1169,7 @@ async def show_admin_panel_from_callback(query):
     """Показ панели администратора из callback"""
     keyboard = [
         [InlineKeyboardButton("📋 Список активных тем", callback_data="list_topics")],
+        [InlineKeyboardButton("📊 Статистика", callback_data="show_stats")],
         [InlineKeyboardButton("ℹ️ Помощь", callback_data="admin_help")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1164,7 +1224,7 @@ def main():
     application.add_handler(CommandHandler("help", help_command, filters.ChatType.SUPERGROUP))
     application.add_handler(CommandHandler("list", list_drivers_command, filters.ChatType.SUPERGROUP))
     application.add_handler(CommandHandler("history", driver_history_command, filters.ChatType.SUPERGROUP))
-    # *** УДАЛЕН вызов stats_command ***
+    application.add_handler(CommandHandler("stats", stats_command, filters.ChatType.SUPERGROUP))
     application.add_handler(CommandHandler("close", close_topic_command, filters.ChatType.SUPERGROUP))
     
     
@@ -1179,11 +1239,16 @@ def main():
    
     print("=" * 50)
     print("🚀 Бот для связи с водителями запущен!")
-    print("📊 Версия 5.1 - упрощенная админ-панель")
+    print("📊 Версия 5.0 - с номером телефона и закрепленными сообщениями")
     print(f"📁 База данных: drivers.db")
     print(f"👥 Администраторы: {len(ADMIN_IDS)}")
     print("=" * 50)
-
+    print("\n📝 Новая логика:")
+    print("✅ Регистрация: имя → телефон → номер авто → сообщение")
+    print("✅ В теме закрепляется сообщение с контактами водителя")
+    print("✅ При совпадении номера и имени → переход в существующую тему")
+    print("✅ При совпадении номера и другом имени → удаление старой и создание новой")
+    print("=" * 50)
     
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
