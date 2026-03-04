@@ -18,7 +18,7 @@ from telegram.ext import (
 
 BOT_TOKEN = "8675966383:AAEMrgaxRGQnkgd2eB4YTnDLJvEjM8bvBiI"  
 GROUP_ID = -1003744040637  
-ADMIN_IDS = [1382277438] 
+ADMIN_IDS = [214357942] 
 
 
 (NAME, PHONE, CAR_NUMBER, MESSAGE) = range(4)
@@ -1254,3 +1254,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
