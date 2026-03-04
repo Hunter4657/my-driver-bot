@@ -793,7 +793,8 @@ async def handle_driver_message(update: Update, context: ContextTypes.DEFAULT_TY
             
             db.save_message(user.id, 'driver', message.text)
             
-            await message.reply_text("✅ Сообщение отправлено в вашу тему!")
+            # *** УДАЛЕНО: сообщение водителю об отправке ***
+            # await message.reply_text("✅ Сообщение отправлено в вашу тему!")
             
         except Exception as e:
             logger.error(f"Ошибка при отправке в тему: {e}")
@@ -1239,19 +1240,16 @@ def main():
    
     print("=" * 50)
     print("🚀 Бот для связи с водителями запущен!")
-    print("📊 Версия 5.0 - с номером телефона и закрепленными сообщениями")
+    print("📊 Версия 5.2 - без уведомлений водителю об отправке")
     print(f"📁 База данных: drivers.db")
     print(f"👥 Администраторы: {len(ADMIN_IDS)}")
     print("=" * 50)
-    print("\n📝 Новая логика:")
-    print("✅ Регистрация: имя → телефон → номер авто → сообщение")
-    print("✅ В теме закрепляется сообщение с контактами водителя")
-    print("✅ При совпадении номера и имени → переход в существующую тему")
-    print("✅ При совпадении номера и другом имени → удаление старой и создание новой")
+    print("\n📝 Изменения:")
+    print("✅ Водитель не получает сообщение 'Сообщение отправлено в вашу тему!'")
+    print("✅ Администратор не получает сообщение об отправке ответа")
     print("=" * 50)
     
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
     main()
-
