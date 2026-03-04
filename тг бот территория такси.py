@@ -1,6 +1,7 @@
 import logging
 import sqlite3
 import os
+import re
 from datetime import datetime
 from typing import Dict, Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -17,10 +18,10 @@ from telegram.ext import (
 
 BOT_TOKEN = "8675966383:AAEMrgaxRGQnkgd2eB4YTnDLJvEjM8bvBiI"  
 GROUP_ID = -1003744040637  
-ADMIN_IDS = [214357942] 
+ADMIN_IDS = [1382277438] 
 
 
-(NAME, CAR_NUMBER, MESSAGE) = range(3)
+(NAME, PHONE, CAR_NUMBER, MESSAGE) = range(4)
 
 
 logging.basicFormat = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -48,6 +49,7 @@ class Database:
                 CREATE TABLE IF NOT EXISTS drivers (
                     driver_id INTEGER PRIMARY KEY,
                     driver_name TEXT,
+                    phone TEXT,
                     car_number TEXT,
                     username TEXT,
                     topic_id INTEGER UNIQUE,
@@ -69,27 +71,36 @@ class Database:
                 )
             ''')
             
+            # Таблица для закрепленных сообщений
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS pinned_messages (
+                    topic_id INTEGER PRIMARY KEY,
+                    message_id INTEGER,
+                    pinned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
             conn.commit()
     
-    def add_driver(self, driver_id: int, driver_name: str, car_number: str, username: str, topic_id: int):
+    def add_driver(self, driver_id: int, driver_name: str, phone: str, car_number: str, username: str, topic_id: int):
         """Добавление нового водителя"""
         with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT OR REPLACE INTO drivers (driver_id, driver_name, car_number, username, topic_id, created_at, is_active)
-                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 1)
-            ''', (driver_id, driver_name, car_number, username, topic_id))
+                INSERT OR REPLACE INTO drivers (driver_id, driver_name, phone, car_number, username, topic_id, created_at, is_active)
+                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 1)
+            ''', (driver_id, driver_name, phone, car_number, username, topic_id))
             conn.commit()
     
-    def update_driver_info(self, driver_id: int, driver_name: str, car_number: str, username: str):
+    def update_driver_info(self, driver_id: int, driver_name: str, phone: str, car_number: str, username: str):
         """Обновление информации о водителе"""
         with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 UPDATE drivers 
-                SET driver_name = ?, car_number = ?, username = ?, last_message = CURRENT_TIMESTAMP
+                SET driver_name = ?, phone = ?, car_number = ?, username = ?, last_message = CURRENT_TIMESTAMP
                 WHERE driver_id = ?
-            ''', (driver_name, car_number, username, driver_id))
+            ''', (driver_name, phone, car_number, username, driver_id))
             conn.commit()
     
     def get_driver_by_topic(self, topic_id: int) -> Optional[Dict]:
@@ -97,7 +108,7 @@ class Database:
         with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT driver_id, driver_name, car_number, username, is_active 
+                SELECT driver_id, driver_name, phone, car_number, username, is_active 
                 FROM drivers 
                 WHERE topic_id = ? AND is_active = 1
             ''', (topic_id,))
@@ -107,9 +118,10 @@ class Database:
                 return {
                     'driver_id': row[0],
                     'driver_name': row[1],
-                    'car_number': row[2],
-                    'username': row[3],
-                    'is_active': row[4]
+                    'phone': row[2],
+                    'car_number': row[3],
+                    'username': row[4],
+                    'is_active': row[5]
                 }
             return None
     
@@ -118,7 +130,7 @@ class Database:
         with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT driver_id, driver_name, car_number, username, topic_id, is_active 
+                SELECT driver_id, driver_name, phone, car_number, username, topic_id, is_active 
                 FROM drivers 
                 WHERE driver_id = ? AND is_active = 1
             ''', (driver_id,))
@@ -128,10 +140,11 @@ class Database:
                 return {
                     'driver_id': row[0],
                     'driver_name': row[1],
-                    'car_number': row[2],
-                    'username': row[3],
-                    'topic_id': row[4],
-                    'is_active': row[5]
+                    'phone': row[2],
+                    'car_number': row[3],
+                    'username': row[4],
+                    'topic_id': row[5],
+                    'is_active': row[6]
                 }
             return None
     
@@ -140,7 +153,7 @@ class Database:
         with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT driver_id, driver_name, car_number, username, topic_id, is_active 
+                SELECT driver_id, driver_name, phone, car_number, username, topic_id, is_active 
                 FROM drivers 
                 WHERE car_number = ? AND is_active = 1
             ''', (car_number,))
@@ -150,10 +163,11 @@ class Database:
                 return {
                     'driver_id': row[0],
                     'driver_name': row[1],
-                    'car_number': row[2],
-                    'username': row[3],
-                    'topic_id': row[4],
-                    'is_active': row[5]
+                    'phone': row[2],
+                    'car_number': row[3],
+                    'username': row[4],
+                    'topic_id': row[5],
+                    'is_active': row[6]
                 }
             return None
     
@@ -162,7 +176,7 @@ class Database:
         with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT driver_id, driver_name, car_number, username, topic_id, created_at 
+                SELECT driver_id, driver_name, phone, car_number, username, topic_id, created_at 
                 FROM drivers 
                 WHERE is_active = 1 
                 ORDER BY created_at DESC
@@ -174,10 +188,11 @@ class Database:
                 drivers.append({
                     'driver_id': row[0],
                     'driver_name': row[1],
-                    'car_number': row[2],
-                    'username': row[3],
-                    'topic_id': row[4],
-                    'created_at': row[5]
+                    'phone': row[2],
+                    'car_number': row[3],
+                    'username': row[4],
+                    'topic_id': row[5],
+                    'created_at': row[6]
                 })
             return drivers
     
@@ -197,6 +212,26 @@ class Database:
             ''', (driver_id,))
             
             conn.commit()
+    
+    def save_pinned_message(self, topic_id: int, message_id: int):
+        """Сохранение ID закрепленного сообщения"""
+        with sqlite3.connect(self.db_name) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR REPLACE INTO pinned_messages (topic_id, message_id, pinned_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+            ''', (topic_id, message_id))
+            conn.commit()
+    
+    def get_pinned_message(self, topic_id: int) -> Optional[int]:
+        """Получение ID закрепленного сообщения"""
+        with sqlite3.connect(self.db_name) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT message_id FROM pinned_messages WHERE topic_id = ?
+            ''', (topic_id,))
+            row = cursor.fetchone()
+            return row[0] if row else None
     
     def get_driver_history(self, driver_id: int, limit: int = 50) -> list:
         """Получение истории сообщений водителя"""
@@ -244,38 +279,45 @@ class Database:
         """Полное удаление водителя из базы"""
         with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
-            # Сначала удаляем сообщения
+            # Сначала получаем topic_id
+            cursor.execute('SELECT topic_id FROM drivers WHERE driver_id = ?', (driver_id,))
+            row = cursor.fetchone()
+            if row:
+                # Удаляем закрепленное сообщение
+                cursor.execute('DELETE FROM pinned_messages WHERE topic_id = ?', (row[0],))
+            # Удаляем сообщения
             cursor.execute('DELETE FROM messages WHERE driver_id = ?', (driver_id,))
             # Затем удаляем водителя
             cursor.execute('DELETE FROM drivers WHERE driver_id = ?', (driver_id,))
             conn.commit()
-    
-    def get_stats(self) -> Dict:
-        """Получение статистики"""
-        with sqlite3.connect(self.db_name) as conn:
-            cursor = conn.cursor()
-            
-            
-            cursor.execute('SELECT COUNT(*) FROM drivers')
-            total_drivers = cursor.fetchone()[0]
-            
-           
-            cursor.execute('SELECT COUNT(*) FROM drivers WHERE is_active = 1')
-            active_drivers = cursor.fetchone()[0]
-            
-           
-            cursor.execute('SELECT COUNT(*) FROM messages')
-            total_messages = cursor.fetchone()[0]
-            
-            return {
-                'total_drivers': total_drivers,
-                'active_drivers': active_drivers,
-                'total_messages': total_messages
-            }
 
 
 db = Database()
 
+def validate_phone(phone: str) -> bool:
+    """Проверка формата номера телефона"""
+    # Убираем все пробелы, скобки, тире
+    cleaned = re.sub(r'[\s\-\(\)]', '', phone)
+    # Проверяем, что остались только цифры и возможно +
+    if not re.match(r'^\+?\d{10,15}$', cleaned):
+        return False
+    return True
+
+def format_phone(phone: str) -> str:
+    """Форматирование номера телефона для красивого отображения"""
+    cleaned = re.sub(r'[\s\-\(\)]', '', phone)
+    if len(cleaned) == 11 and cleaned.startswith('8'):
+        # Российский номер: 8XXXYYYZZZZ -> +7 (XXX) YYY-ZZZZ
+        return f"+7 ({cleaned[1:4]}) {cleaned[4:7]}-{cleaned[7:9]}-{cleaned[9:11]}"
+    elif len(cleaned) == 12 and cleaned.startswith('7'):
+        # Российский номер: 7XXXYYYZZZZ -> +7 (XXX) YYY-ZZZZ
+        return f"+7 ({cleaned[1:4]}) {cleaned[4:7]}-{cleaned[7:9]}-{cleaned[9:11]}"
+    elif len(cleaned) == 12 and cleaned.startswith('+7'):
+        # Уже с +7
+        return f"+7 ({cleaned[2:5]}) {cleaned[5:8]}-{cleaned[8:10]}-{cleaned[10:12]}"
+    else:
+        # Если не российский формат, возвращаем как есть
+        return cleaned
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
@@ -298,7 +340,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             await update.message.reply_text(
                 f"👋 **С возвращением, {driver_info['driver_name']}!**\n\n"
-                f"🚗 Ваш автомобиль: {driver_info['car_number']}\n\n"
+                f"📞 Телефон: {driver_info['phone']}\n"
+                f"🚗 Автомобиль: {driver_info['car_number']}\n\n"
                 "Напишите ваше сообщение, и оно будет отправлено руководителю.",
                 parse_mode='Markdown'
             )
@@ -307,7 +350,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 "👋 **Добро пожаловать!**\n\n"
                 "Для начала работы мне нужно узнать ваши данные.\n\n"
-                "📝 **Шаг 1 из 2:** Введите ваше имя:",
+                "📝 **Шаг 1 из 3:** Введите ваше имя:",
                 parse_mode='Markdown'
             )
             return NAME
@@ -319,7 +362,35 @@ async def handle_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(
         f"✅ Имя сохранено: {context.user_data['driver_name']}\n\n"
-        "🚗 **Шаг 2 из 2:** Введите номер вашего автомобиля "
+        "📞 **Шаг 2 из 3:** Введите ваш номер телефона\n"
+        "(например: +7 999 123-45-67 или 89991234567):",
+        parse_mode='Markdown'
+    )
+    return PHONE
+
+async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка ввода номера телефона"""
+    phone_raw = update.message.text.strip()
+    
+    if not validate_phone(phone_raw):
+        await update.message.reply_text(
+            "❌ **Неверный формат номера телефона!**\n\n"
+            "Пожалуйста, введите номер в формате:\n"
+            "• +7 999 123-45-67\n"
+            "• 89991234567\n"
+            "• 79991234567\n\n"
+            "Попробуйте еще раз:",
+            parse_mode='Markdown'
+        )
+        return PHONE
+    
+    # Форматируем номер для красивого отображения
+    formatted_phone = format_phone(phone_raw)
+    context.user_data['phone'] = formatted_phone
+    
+    await update.message.reply_text(
+        f"✅ Номер телефона сохранен: {formatted_phone}\n\n"
+        "🚗 **Шаг 3 из 3:** Введите номер вашего автомобиля "
         "(например: А123ВВ 777 или 1234 AB-5):",
         parse_mode='Markdown'
     )
@@ -330,6 +401,7 @@ async def handle_car_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     car_number = update.message.text.strip().upper()
     driver_name = context.user_data.get('driver_name')
+    phone = context.user_data.get('phone')
     
     # Сохраняем номер в user_data
     context.user_data['car_number'] = car_number
@@ -345,13 +417,14 @@ async def handle_car_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"✅ **Добро пожаловать!**\n\n"
                 f"Мы нашли вашу существующую тему.\n"
                 f"👤 Имя: {driver_name}\n"
+                f"📞 Телефон: {phone}\n"
                 f"🚗 Автомобиль: {car_number}\n\n"
                 f"Теперь напишите ваше сообщение, и оно будет отправлено в вашу тему.",
                 parse_mode='Markdown'
             )
             
-            # Обновляем информацию о водителе (на случай, если изменился username)
-            db.update_driver_info(user.id, driver_name, car_number, user.username or "")
+            # Обновляем информацию о водителе (на случай, если изменился username или телефон)
+            db.update_driver_info(user.id, driver_name, phone, car_number, user.username or "")
             
             # Очищаем данные
             context.user_data.clear()
@@ -370,13 +443,14 @@ async def handle_car_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             
             # Удаляем старую тему и создаем новую
-            result = await replace_topic_and_create_new(context, user, driver_name, car_number, existing_driver)
+            result = await replace_topic_and_create_new(context, user, driver_name, phone, car_number, existing_driver)
             
             if result:
                 await update.message.reply_text(
                     f"✅ **Новая тема успешно создана!**\n\n"
                     f"Старая тема с номером {car_number} была удалена.\n\n"
                     f"👤 Ваше имя: {driver_name}\n"
+                    f"📞 Телефон: {phone}\n"
                     f"🚗 Номер авто: {car_number}\n\n"
                     f"Теперь напишите ваше первое сообщение руководителю.",
                     parse_mode='Markdown'
@@ -401,7 +475,7 @@ async def handle_car_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return MESSAGE
 
-async def replace_topic_and_create_new(context: ContextTypes.DEFAULT_TYPE, user, driver_name: str, car_number: str, existing_driver: Dict) -> bool:
+async def replace_topic_and_create_new(context: ContextTypes.DEFAULT_TYPE, user, driver_name: str, phone: str, car_number: str, existing_driver: Dict) -> bool:
     """Функция для удаления старой темы и создания новой"""
     try:
         # Уведомляем старого водителя (если это другой пользователь)
@@ -437,16 +511,48 @@ async def replace_topic_and_create_new(context: ContextTypes.DEFAULT_TYPE, user,
         
         topic_id = result.message_thread_id
         
-        # Отправляем приветственное сообщение в тему
+        # Создаем красивое информационное сообщение для закрепления
+        info_message = (
+            f"📌 **ИНФОРМАЦИЯ О ВОДИТЕЛЕ** 📌\n\n"
+            f"👤 **Имя:** {driver_name}\n"
+            f"📞 **Телефон:** {phone}\n"
+            f"🚗 **Автомобиль:** {car_number}\n"
+            f"🆔 **ID:** `{user.id}`\n"
+            f"📅 **Дата регистрации:** {current_time}\n\n"
+            f"---\n"
+            f"📝 *Это сообщение закреплено. Вся важная информация о водителе находится здесь.*"
+        )
+        
+        # Отправляем информационное сообщение
+        info_msg = await context.bot.send_message(
+            chat_id=GROUP_ID,
+            message_thread_id=topic_id,
+            text=info_message,
+            parse_mode='Markdown'
+        )
+        
+        # Закрепляем сообщение
+        try:
+            await context.bot.pin_chat_message(
+                chat_id=GROUP_ID,
+                message_id=info_msg.message_id,
+                message_thread_id=topic_id
+            )
+            # Сохраняем ID закрепленного сообщения
+            db.save_pinned_message(topic_id, info_msg.message_id)
+        except Exception as e:
+            logger.error(f"Ошибка при закреплении сообщения: {e}")
+        
+        # Отправляем приветственное сообщение о новом обращении
         welcome_text = (
             f"✅ **Новое обращение!**\n\n"
             f"**Водитель:** {driver_name}\n"
+            f"**Телефон:** {phone}\n"
             f"**Автомобиль:** {car_number}\n"
             f"**Время:** {current_time}\n\n"
             f"**Первое сообщение:**\nНовая регистрация\n\n"
             f"---\n"
             f"📝 *Чтобы ответить водителю, просто напишите сообщение в эту тему*\n"
-            f"🆔 ID водителя: `{user.id}`\n\n"
             f"⚠️ *Старая тема с этим номером была автоматически удалена*"
         )
         
@@ -461,6 +567,7 @@ async def replace_topic_and_create_new(context: ContextTypes.DEFAULT_TYPE, user,
         db.add_driver(
             driver_id=user.id,
             driver_name=driver_name,
+            phone=phone,
             car_number=car_number,
             username=user.username or "",
             topic_id=topic_id
@@ -469,16 +576,16 @@ async def replace_topic_and_create_new(context: ContextTypes.DEFAULT_TYPE, user,
         # Сохраняем приветственное сообщение
         db.save_message(user.id, 'driver', "Новая регистрация")
         
-        # Уведомляем админов
+        # Уведомляем админов о новом водителе
         for admin_id in ADMIN_IDS:
             try:
                 await context.bot.send_message(
                     chat_id=admin_id,
                     text=f"🆕 **Новый водитель!**\n\n"
                          f"👤 {driver_name}\n"
+                         f"📞 {phone}\n"
                          f"🚗 {car_number}\n"
-                         f"Тема создана: {topic_name}\n"
-                         f"⚠️ Старая тема с этим номером удалена",
+                         f"Тема создана: {topic_name}",
                     parse_mode='Markdown'
                 )
             except:
@@ -497,9 +604,10 @@ async def handle_first_message(update: Update, context: ContextTypes.DEFAULT_TYP
     
     
     driver_name = context.user_data.get('driver_name')
+    phone = context.user_data.get('phone')
     car_number = context.user_data.get('car_number')
     
-    if not driver_name or not car_number:
+    if not driver_name or not phone or not car_number:
         await update.message.reply_text(
             "❌ Произошла ошибка. Пожалуйста, начните заново с команды /start"
         )
@@ -508,13 +616,14 @@ async def handle_first_message(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text("🔄 Создаю тему для вашего обращения...")
     
 
-    topic_id = await create_driver_topic(context, user, driver_name, car_number, message.text)
+    topic_id = await create_driver_topic(context, user, driver_name, phone, car_number, message.text)
     
     if topic_id:
       
         db.add_driver(
             driver_id=user.id,
             driver_name=driver_name,
+            phone=phone,
             car_number=car_number,
             username=user.username or "",
             topic_id=topic_id
@@ -529,6 +638,7 @@ async def handle_first_message(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(
             "✅ **Тема успешно создана!**\n\n"
             f"👤 Ваше имя: {driver_name}\n"
+            f"📞 Телефон: {phone}\n"
             f"🚗 Номер авто: {car_number}\n\n"
             "Все ваши сообщения теперь будут сохраняться в отдельной теме.\n"
             "Руководитель ответит вам в ближайшее время.\n\n"
@@ -549,7 +659,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return ConversationHandler.END
 
-async def create_driver_topic(context: ContextTypes.DEFAULT_TYPE, driver_user, driver_name: str, car_number: str, first_message: str):
+async def create_driver_topic(context: ContextTypes.DEFAULT_TYPE, driver_user, driver_name: str, phone: str, car_number: str, first_message: str):
     """Создание новой темы для водителя"""
     try:
         
@@ -564,16 +674,49 @@ async def create_driver_topic(context: ContextTypes.DEFAULT_TYPE, driver_user, d
         
         topic_id = result.message_thread_id
         
+        # Создаем красивое информационное сообщение для закрепления
+        info_message = (
+            f"📌 **ИНФОРМАЦИЯ О ВОДИТЕЛЕ** 📌\n\n"
+            f"👤 **Имя:** {driver_name}\n"
+            f"📞 **Телефон:** {phone}\n"
+            f"🚗 **Автомобиль:** {car_number}\n"
+            f"🆔 **ID:** `{driver_user.id}`\n"
+            f"📅 **Дата регистрации:** {current_time}\n\n"
+            f"---\n"
+            f"📝 *Это сообщение закреплено. Вся важная информация о водителе находится здесь.*"
+        )
         
+        # Отправляем информационное сообщение
+        info_msg = await context.bot.send_message(
+            chat_id=GROUP_ID,
+            message_thread_id=topic_id,
+            text=info_message,
+            parse_mode='Markdown'
+        )
+        
+        # Закрепляем сообщение
+        try:
+            await context.bot.pin_chat_message(
+                chat_id=GROUP_ID,
+                message_id=info_msg.message_id,
+                message_thread_id=topic_id
+            )
+            # Сохраняем ID закрепленного сообщения
+            db.save_pinned_message(topic_id, info_msg.message_id)
+        except Exception as e:
+            logger.error(f"Ошибка при закреплении сообщения: {e}")
+        
+        # Отправляем приветственное сообщение о новом обращении
         welcome_text = (
             f"✅ **Новое обращение!**\n\n"
             f"**Водитель:** {driver_name}\n"
+            f"**Телефон:** {phone}\n"
             f"**Автомобиль:** {car_number}\n"
             f"**Время:** {current_time}\n\n"
             f"**Первое сообщение:**\n{first_message}\n\n"
             f"---\n"
             f"📝 *Чтобы ответить водителю, просто напишите сообщение в эту тему*\n"
-            f"🆔 ID водителя: `{driver_user.id}`"
+            f"📌 *Информация о водителе закреплена выше*"
         )
         
         await context.bot.send_message(
@@ -590,6 +733,7 @@ async def create_driver_topic(context: ContextTypes.DEFAULT_TYPE, driver_user, d
                     chat_id=admin_id,
                     text=f"🆕 **Новый водитель!**\n\n"
                          f"👤 {driver_name}\n"
+                         f"📞 {phone}\n"
                          f"🚗 {car_number}\n"
                          f"Тема создана: {topic_name}",
                     parse_mode='Markdown'
@@ -618,7 +762,7 @@ async def handle_driver_message(update: Update, context: ContextTypes.DEFAULT_TY
             await context.bot.send_message(
                 chat_id=GROUP_ID,
                 message_thread_id=topic_id,
-                text=f"📨 **Сообщение от {driver_info['driver_name']} ({driver_info['car_number']}):**\n\n{message.text}",
+                text=f"📨 **Сообщение от {driver_info['driver_name']} ({driver_info['phone']}, {driver_info['car_number']}):**\n\n{message.text}",
                 parse_mode='Markdown'
             )
             
@@ -642,7 +786,6 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показ панели администратора в группе"""
     keyboard = [
         [InlineKeyboardButton("📋 Список активных тем", callback_data="list_topics")],
-        [InlineKeyboardButton("📊 Статистика", callback_data="show_stats")],
         [InlineKeyboardButton("ℹ️ Помощь", callback_data="admin_help")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -679,11 +822,8 @@ async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
             # Сохраняем в историю
             db.save_message(driver_id, 'admin', message.text)
             
-            # *** УДАЛЕНО: сообщение администратору об отправке ***
-            
         except Exception as e:
             logger.error(f"Ошибка при отправке ответа водителю: {e}")
-            # *** УДАЛЕНО: сообщение об ошибке администратору ***
     else:
         
         pass
@@ -721,6 +861,7 @@ async def close_topic_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         await message.reply_text(
             f"Вы уверены, что хотите закрыть тему?\n"
             f"Водитель: {driver_info['driver_name']}\n"
+            f"Телефон: {driver_info['phone']}\n"
             f"Автомобиль: {driver_info['car_number']}",
             reply_markup=reply_markup
         )
@@ -774,7 +915,7 @@ async def driver_history_command(update: Update, context: ContextTypes.DEFAULT_T
         return
     
     
-    history_text = f"**История сообщений с {driver_info['driver_name']} ({driver_info['car_number']}):**\n\n"
+    history_text = f"**История сообщений с {driver_info['driver_name']} ({driver_info['phone']}, {driver_info['car_number']}):**\n\n"
     
     for msg in reversed(history):  
         sender = "🚗 Водитель" if msg['sender'] == 'driver' else "👨‍💼 Руководитель"
@@ -808,9 +949,10 @@ async def list_drivers_command(update: Update, context: ContextTypes.DEFAULT_TYP
         created = datetime.strptime(driver['created_at'], '%Y-%m-%d %H:%M:%S').strftime('%d.%m.%Y %H:%M')
         text += (
             f"🚗 **{driver['driver_name']}**\n"
-            f"└ Авто: {driver['car_number']}\n"
-            f"└ Создан: {created}\n"
-            f"└ Тема: {driver['topic_id']}\n\n"
+            f"└ 📞 Телефон: {driver['phone']}\n"
+            f"└ 🚗 Авто: {driver['car_number']}\n"
+            f"└ 📅 Создан: {created}\n"
+            f"└ 🆔 Тема: {driver['topic_id']}\n\n"
         )
     
 
@@ -819,25 +961,7 @@ async def list_drivers_command(update: Update, context: ContextTypes.DEFAULT_TYP
     
     await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
-async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда для просмотра статистики /stats"""
-    user = update.effective_user
-    
-
-    if user.id not in ADMIN_IDS:
-        await update.message.reply_text("❌ У вас нет прав для этой команды")
-        return
-    
-    stats = db.get_stats()
-    
-    text = (
-        "📊 **Статистика бота:**\n\n"
-        f"👥 Всего водителей: **{stats['total_drivers']}**\n"
-        f"✅ Активных сейчас: **{stats['active_drivers']}**\n"
-        f"💬 Всего сообщений: **{stats['total_messages']}**\n"
-    )
-    
-    await update.message.reply_text(text, parse_mode='Markdown')
+# *** УДАЛЕНА функция stats_command ***
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда помощи /help"""
@@ -848,12 +972,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "**🔧 Команды администратора:**\n\n"
             "`/list` - список активных водителей\n"
             "`/history [ID]` - история сообщений\n"
-            "`/stats` - статистика\n"
             "`/close` - закрыть текущую тему\n"
             "`/help` - это сообщение\n\n"
             "**📝 Как работать:**\n"
             "• Для ответа водителю просто пишите в его тему\n"
-            "• В названии темы указаны имя водителя и номер авто\n"
+            "• В теме закреплена информация о водителе\n"
+            "• В названии темы указаны имя и номер авто\n"
             "• Все ответы автоматически пересылаются водителю\n"
             "• Используйте /history для просмотра истории\n"
             "• Закрывайте тему после решения вопроса"
@@ -863,8 +987,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "**👋 Помощь для водителя:**\n\n"
             "1️⃣ Введите /start для регистрации\n"
             "2️⃣ Укажите ваше имя\n"
-            "3️⃣ Укажите номер автомобиля\n"
-            "4️⃣ Напишите сообщение руководителю\n\n"
+            "3️⃣ Укажите номер телефона\n"
+            "4️⃣ Укажите номер автомобиля\n"
+            "5️⃣ Напишите сообщение руководителю\n\n"
             "Если номер авто уже занят другим водителем, старая тема автоматически удаляется."
         )
     
@@ -888,7 +1013,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = []
         
         for driver in drivers:
-            text += f"🚗 {driver['driver_name']} ({driver['car_number']}) - с {driver['created_at'][:10]}\n"
+            text += f"🚗 {driver['driver_name']} ({driver['phone']}, {driver['car_number']}) - с {driver['created_at'][:10]}\n"
             button = [InlineKeyboardButton(
                 f"📝 {driver['driver_name']} - {driver['car_number']}", 
                 callback_data=f"goto_topic_{driver['topic_id']}"
@@ -901,31 +1026,20 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
     
-    elif data == "show_stats":
-        stats = db.get_stats()
-        text = (
-            "📊 **Статистика:**\n\n"
-            f"👥 Всего водителей: {stats['total_drivers']}\n"
-            f"✅ Активных: {stats['active_drivers']}\n"
-            f"💬 Сообщений: {stats['total_messages']}"
-        )
-        
-        keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_admin")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    # *** УДАЛЕН блок elif data == "show_stats" ***
     
     elif data == "admin_help":
         text = (
             "**📚 Как пользоваться ботом:**\n\n"
             "1️⃣ Водитель пишет боту в личку\n"
-            "2️⃣ Водитель проходит регистрацию (имя и номер авто)\n"
+            "2️⃣ Водитель проходит регистрацию (имя, телефон, номер авто)\n"
             "3️⃣ Бот создает тему с именем и номером авто\n"
-            "4️⃣ Вы отвечаете в теме - ответ уходит водителю\n"
-            "5️⃣ Вся история сохраняется в базе данных\n\n"
+            "4️⃣ В теме закрепляется сообщение с контактами водителя\n"
+            "5️⃣ Вы отвечаете в теме - ответ уходит водителю\n"
+            "6️⃣ Вся история сохраняется в базе данных\n\n"
             "**Команды:**\n"
             "/list - список водителей\n"
             "/history - история сообщений\n"
-            "/stats - статистика\n"
             "/close - закрыть тему"
         )
         
@@ -941,7 +1055,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         drivers = db.get_all_active_drivers()
         text = "**📋 Активные темы:**\n\n"
         for driver in drivers:
-            text += f"🚗 {driver['driver_name']} ({driver['car_number']}) - с {driver['created_at'][:10]}\n"
+            text += f"🚗 {driver['driver_name']} ({driver['phone']}, {driver['car_number']}) - с {driver['created_at'][:10]}\n"
         
         await query.edit_message_text(text, parse_mode='Markdown')
         
@@ -953,9 +1067,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if driver_info:
             await query.edit_message_text(
                 f"🔗 **Тема водителя {driver_info['driver_name']}**\n\n"
-                f"Автомобиль: {driver_info['car_number']}\n"
-                f"ID темы: `{topic_id}`\n\n"
-                f"Найдите эту тему в списке тем группы."
+                f"📞 Телефон: {driver_info['phone']}\n"
+                f"🚗 Автомобиль: {driver_info['car_number']}\n"
+                f"🆔 ID темы: `{topic_id}`\n\n"
+                f"Найдите эту тему в списке тем группы. Там закреплена вся информация."
             )
     
     elif data.startswith("confirm_close_"):
@@ -985,7 +1100,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
             
             await query.edit_message_text(
-                f"✅ Тема водителя {driver_info['driver_name']} ({driver_info['car_number']}) закрыта"
+                f"✅ Тема водителя {driver_info['driver_name']} ({driver_info['phone']}, {driver_info['car_number']}) закрыта"
             )
     
     elif data == "cancel_close":
@@ -995,7 +1110,6 @@ async def show_admin_panel_from_callback(query):
     """Показ панели администратора из callback"""
     keyboard = [
         [InlineKeyboardButton("📋 Список активных тем", callback_data="list_topics")],
-        [InlineKeyboardButton("📊 Статистика", callback_data="show_stats")],
         [InlineKeyboardButton("ℹ️ Помощь", callback_data="admin_help")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1030,6 +1144,7 @@ def main():
         entry_points=[CommandHandler("start", start)],
         states={
             NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_name)],
+            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_phone)],
             CAR_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_car_number)],
             MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_first_message)]
         },
@@ -1049,7 +1164,7 @@ def main():
     application.add_handler(CommandHandler("help", help_command, filters.ChatType.SUPERGROUP))
     application.add_handler(CommandHandler("list", list_drivers_command, filters.ChatType.SUPERGROUP))
     application.add_handler(CommandHandler("history", driver_history_command, filters.ChatType.SUPERGROUP))
-    application.add_handler(CommandHandler("stats", stats_command, filters.ChatType.SUPERGROUP))
+    # *** УДАЛЕН вызов stats_command ***
     application.add_handler(CommandHandler("close", close_topic_command, filters.ChatType.SUPERGROUP))
     
     
@@ -1064,18 +1179,13 @@ def main():
    
     print("=" * 50)
     print("🚀 Бот для связи с водителями запущен!")
-    print("📊 Версия 4.1 - автоматическое удаление старых тем")
+    print("📊 Версия 5.1 - упрощенная админ-панель")
     print(f"📁 База данных: drivers.db")
     print(f"👥 Администраторы: {len(ADMIN_IDS)}")
     print("=" * 50)
-    print("\n📝 Новая логика:")
-    print("✅ Если номер свободен → создается новая тема")
-    print("✅ Если номер занят и имя совпадает → переход в существующую тему")
-    print("✅ Если номер занят и имя НЕ совпадает → автоматическое удаление старой и создание новой")
-    print("=" * 50)
+
     
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
     main()
-
