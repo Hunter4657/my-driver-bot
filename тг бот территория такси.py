@@ -793,8 +793,7 @@ async def handle_driver_message(update: Update, context: ContextTypes.DEFAULT_TY
             
             db.save_message(user.id, 'driver', message.text)
             
-            # *** УДАЛЕНО: сообщение водителю об отправке ***
-            # await message.reply_text("✅ Сообщение отправлено в вашу тему!")
+           
             
         except Exception as e:
             logger.error(f"Ошибка при отправке в тему: {e}")
@@ -1253,3 +1252,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
