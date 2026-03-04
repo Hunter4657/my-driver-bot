@@ -1236,20 +1236,11 @@ def main():
    
     application.add_handler(CallbackQueryHandler(button_callback))
     
-   
-    print("=" * 50)
-    print("🚀 Бот для связи с водителями запущен!")
-    print("📊 Версия 5.2 - без уведомлений водителю об отправке")
-    print(f"📁 База данных: drivers.db")
-    print(f"👥 Администраторы: {len(ADMIN_IDS)}")
-    print("=" * 50)
-    print("\n📝 Изменения:")
-    print("✅ Водитель не получает сообщение 'Сообщение отправлено в вашу тему!'")
-    print("✅ Администратор не получает сообщение об отправке ответа")
-    print("=" * 50)
+ 
     
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
     main()
+
 
