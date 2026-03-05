@@ -128,7 +128,7 @@ class Database:
             return None
     
     def get_driver_by_id(self, driver_id: int) -> Optional[Dict]:
-        """Получение информации о водителе по его ID"""
+        """Получение информации о водителе по его ID (только активные)"""
         with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
             cursor.execute('''
@@ -150,8 +150,33 @@ class Database:
                 }
             return None
     
+    def get_driver_by_id_include_inactive(self, driver_id: int) -> Optional[Dict]:
+        """Получение информации о водителе по его ID (включая неактивных)"""
+        with sqlite3.connect(self.db_name) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT driver_id, driver_name, phone, car_number, username, topic_id, is_active 
+                FROM drivers 
+                WHERE driver_id = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+            ''', (driver_id,))
+            row = cursor.fetchone()
+            
+            if row:
+                return {
+                    'driver_id': row[0],
+                    'driver_name': row[1],
+                    'phone': row[2],
+                    'car_number': row[3],
+                    'username': row[4],
+                    'topic_id': row[5],
+                    'is_active': row[6]
+                }
+            return None
+    
     def get_driver_by_car_number(self, car_number: str) -> Optional[Dict]:
-        """Получение информации о водителе по номеру авто"""
+        """Получение информации о водителе по номеру авто (только активные)"""
         with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
             cursor.execute('''
@@ -360,11 +385,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "❌ У вас нет доступа к этой группе."
             )
     else:
-        
+        # Сначала проверяем активного водителя
         driver_info = db.get_driver_by_id(user.id)
         
         if driver_info:
-            
+            # Водитель активен
             await update.message.reply_text(
                 f"👋 **С возвращением, {driver_info['driver_name']}!**\n\n"
                 f"📞 Телефон: {driver_info['phone']}\n"
@@ -373,14 +398,32 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode='Markdown'
             )
         else:
+            # Проверяем неактивного водителя
+            inactive_driver = db.get_driver_by_id_include_inactive(user.id)
             
-            await update.message.reply_text(
-                "👋 **Добро пожаловать!**\n\n"
-                "Для начала работы мне нужно узнать ваши данные.\n\n"
-                "📝 **Шаг 1 из 3:** Введите ваше имя:",
-                parse_mode='Markdown'
-            )
-            return NAME
+            if inactive_driver:
+                # Водитель был деактивирован
+                await update.message.reply_text(
+                    f"👋 **С возвращением, {inactive_driver['driver_name']}!**\n\n"
+                    f"📞 Телефон: {inactive_driver['phone']}\n"
+                    f"🚗 Автомобиль: {inactive_driver['car_number']}\n\n"
+                    "⚠️ **Ваша предыдущая тема была закрыта.**\n\n"
+                    "Давайте создадим новую тему для вас.\n\n"
+                    "📝 **Шаг 1 из 3:** Введите ваше имя:",
+                    parse_mode='Markdown'
+                )
+                # Очищаем старые данные и начинаем заново
+                context.user_data.clear()
+                return NAME
+            else:
+                # Новый водитель
+                await update.message.reply_text(
+                    "👋 **Добро пожаловать!**\n\n"
+                    "Для начала работы мне нужно узнать ваши данные.\n\n"
+                    "📝 **Шаг 1 из 3:** Введите ваше имя:",
+                    parse_mode='Markdown'
+                )
+                return NAME
 
 async def handle_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка ввода имени"""
@@ -799,9 +842,11 @@ async def handle_driver_message(update: Update, context: ContextTypes.DEFAULT_TY
     user = update.effective_user
     message = update.message
     
+    # Сначала проверяем активного водителя
     driver_info = db.get_driver_by_id(user.id)
     
     if driver_info:
+        # Водитель активен - отправляем сообщение
         topic_id = driver_info['topic_id']
         try:
             await forward_message_to_topic(
@@ -820,9 +865,23 @@ async def handle_driver_message(update: Update, context: ContextTypes.DEFAULT_TY
                 "❌ Ошибка при отправке. Пожалуйста, попробуйте позже."
             )
     else:
-        await message.reply_text(
-            "❌ Вы не зарегистрированы. Пожалуйста, введите /start для регистрации."
-        )
+        # Проверяем, есть ли неактивная запись
+        inactive_driver = db.get_driver_by_id_include_inactive(user.id)
+        
+        if inactive_driver:
+            # Водитель был деактивирован - предлагаем заново зарегистрироваться
+            await message.reply_text(
+                "⚠️ **Ваша предыдущая тема была закрыта.**\n\n"
+                "Чтобы продолжить общение с руководителем, пожалуйста, "
+                "пройдите регистрацию заново с помощью команды /start",
+                parse_mode='Markdown'
+            )
+        else:
+            # Водитель не найден в базе
+            await message.reply_text(
+                "❌ Вы не зарегистрированы. Пожалуйста, введите /start для регистрации.",
+                parse_mode='Markdown'
+            )
 
 async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показ панели администратора в группе"""
@@ -1278,7 +1337,7 @@ def main():
    
     application.add_handler(CallbackQueryHandler(button_callback))
     
-
+  
     
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
